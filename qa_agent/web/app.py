@@ -137,12 +137,41 @@ async def chat_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"answer": answer}
 
 
+def _stream_qa_answer(history: list, user_query: str, use_internal_kb: bool = True, **kwargs: Any):
+    """同步生成器：yield SSE 行（data: {...}\n\n），包含 session_id 和 question_id。"""
+    for event in _agent.answer_stream(history=history, user_query=user_query, use_internal_kb=use_internal_kb, **kwargs):
+        yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+
+
+def _parse_qa_stream_payload(payload: Dict[str, Any]) -> tuple:
+    """
+    解析 /api/qa 流式请求，返回 (session_id, model, question_id, user_query, history, use_internal_kb, opts)
+    """
+    session_id = str(payload.get("session_id") or "")
+    model = str(payload.get("model") or "")
+
+    question = payload.get("question") or {}
+    question_id = str(question.get("id") or "")
+    user_query = str(question.get("text") or "")
+
+    context = payload.get("context") or {}
+    history = context.get("history") or []
+    if not isinstance(history, list):
+        history = []
+
+    options = payload.get("options") or {}
+    use_internal_kb = bool(options.get("use_internal_kb", True))
+    opts = _map_qa_options(payload)
+
+    return session_id, model, question_id, user_query, history, use_internal_kb, opts
+
+
 @app.post("/api/qa")
-async def qa_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def qa_endpoint(payload: Dict[str, Any]):
     """
     规范化 JSON 接口：面向前端和其他后端服务。
 
-    请求结构（简要）：
+    请求结构：
     {
       "session_id": "0000-0000-0000-0004",
       "model": "gpt-5-mini",
@@ -162,26 +191,17 @@ async def qa_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
       },
       "context": { "history": [ ... ] }
     }
+
+    当 options.stream = true 时，返回 SSE 流式响应。
     """
-    session_id = str(payload.get("session_id") or "")
-    model = str(payload.get("model") or "")
-    # prompt 配置当前由后端内部配置决定，这里暂不使用，仅透传回响应
-    prompt_cfg = payload.get("prompt") or {}
-
-    question = payload.get("question") or {}
-    question_id = str(question.get("id") or "")
-    user_query = str(question.get("text") or "")
-    # 当前版本后端不直接处理 attachments，仅作为占位字段透传
-    attachments = question.get("attachments") or []
-
-    context = payload.get("context") or {}
-    history = context.get("history") or []
-    if not isinstance(history, list):
-        history = []
+    import asyncio
+    import queue
+    from concurrent.futures import ThreadPoolExecutor
 
     options = payload.get("options") or {}
-    opts = _map_qa_options(payload)
-    use_internal_kb = bool(options.get("use_internal_kb", True))
+    is_stream = bool(options.get("stream", False))
+
+    session_id, model, question_id, user_query, history, use_internal_kb, opts = _parse_qa_stream_payload(payload)
 
     _debug_log(
         "qa_request",
@@ -191,10 +211,44 @@ async def qa_endpoint(payload: Dict[str, Any]) -> Dict[str, Any]:
             "user_query_preview": user_query[:50],
             "history_len": len(history),
             "use_internal_kb": use_internal_kb,
+            "stream": is_stream,
             **opts,
         },
     )
 
+    # 流式响应
+    if is_stream:
+        loop = asyncio.get_event_loop()
+        q: queue.Queue = queue.Queue()
+        executor = ThreadPoolExecutor(max_workers=2)
+
+        def produce():
+            for event in _agent.answer_stream(history=history, user_query=user_query, use_internal_kb=use_internal_kb, **opts):
+                # 在事件中添加 session_id 和 question_id
+                event["session_id"] = session_id
+                event["question_id"] = question_id
+                q.put("data: " + json.dumps(event, ensure_ascii=False) + "\n\n")
+            q.put(None)
+
+        async def event_generator() -> AsyncIterator[str]:
+            loop.run_in_executor(executor, produce)
+            while True:
+                chunk = await loop.run_in_executor(executor, q.get)
+                if chunk is None:
+                    break
+                yield chunk
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    # 非流式响应
     answer_text = _agent.answer(
         history=history,
         user_query=user_query,
