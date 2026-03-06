@@ -1,0 +1,55 @@
+# Python
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+*.egg-info/
+*.egg
+
+# 环境与密钥（保留 .env.example 作模板）
+.env
+.env.local
+.env.*.local
+
+# 调试与日志
+*.log
+debug-*.log
+retrieval-debug.log
+
+# 预处理/流水线生成的数据与缓存
+data/mineru_output/
+data/preprocessed/
+data/kb.sqlite
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 测试与覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# uv
+.uv_cache/
+
+# 其他
+*.bak

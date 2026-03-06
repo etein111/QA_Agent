@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>高数学习问答 Agent</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/static/styles.css" />
+    <!-- MathJax 用于公式渲染 -->
+    <script>
+      window.MathJax = {
+        tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]] },
+        svg: { fontCache: "global" },
+      };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" defer></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="app-header">
+        <h1>高等数学学习问答 Agent</h1>
+        <p>支持公式渲染、内部资料引用与联网搜索 URL 引用</p>
+      </header>
+      <main class="app-main">
+        <section class="params-panel" id="params-panel">
+          <div class="params-row">
+            <label for="param-temperature">温度 (0–1)</label>
+            <input type="number" id="param-temperature" min="0" max="1" step="0.1" value="0.3" />
+          </div>
+          <div class="params-row">
+            <label for="param-use-web">联网搜索</label>
+            <input type="checkbox" id="param-use-web" checked />
+          </div>
+          <div class="params-row">
+            <label for="param-kb-top-k">知识库条数</label>
+            <input type="number" id="param-kb-top-k" min="1" max="20" value="3" />
+          </div>
+          <div class="params-row">
+            <label for="param-web-top-k">联网条数</label>
+            <input type="number" id="param-web-top-k" min="1" max="15" value="5" />
+          </div>
+        </section>
+        <section id="chat-window" class="chat-window"></section>
+        <section class="input-panel">
+          <textarea
+            id="user-input"
+            rows="3"
+            placeholder="在这里提问高等数学相关问题，例如：多元函数偏导数存在是否一定可微？"
+          ></textarea>
+          <div id="image-preview" class="image-preview"></div>
+          <div class="input-toolbar">
+            <label class="image-upload">
+              <span>上传题目截图</span>
+              <input type="file" id="image-input" accept="image/*" />
+            </label>
+            <button id="send-btn">发送</button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/main.js" defer></script>
+  </body>
+</html>
+
