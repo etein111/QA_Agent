@@ -183,18 +183,6 @@ class QAAgent:
                 + "\n9. 本轮禁止使用任何联网搜索或浏览器能力，请仅根据对话历史和内部知识库作答，不要假设或编造外部网页内容。"
             )
 
-        # 根据前端是否开启联网搜索，动态拼接 system_prompt
-        if auto_use_web:
-            system_prompt = (
-                SYSTEM_PROMPT_BASE
-                + "\n9. 本轮你需要使用自身具备的联网搜索/浏览器能力，主动检索最新资料，并在引用处标明来源。"
-            )
-        else:
-            system_prompt = (
-                SYSTEM_PROMPT_BASE
-                + "\n9. 本轮禁止使用任何联网搜索或浏览器能力，请仅根据对话历史、图片和内部知识库作答，不要假设或编造外部网页内容。"
-            )
-
         if use_langfuse:
             from langfuse import get_client
 

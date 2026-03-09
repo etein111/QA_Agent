@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
-from typing import Dict, Any, AsyncIterator
+from typing import Dict, Any, List, AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,6 +87,72 @@ def _parse_chat_params(payload: Dict[str, Any]) -> Dict[str, Any]:
         "kb_top_k": clamp_int(payload.get("kb_top_k"), 1, 20, 3),
         "web_max_results": clamp_int(payload.get("web_max_results"), 1, 15, 5),
     }
+
+
+def _extract_citations(answer_text: str) -> List[Dict[str, Any]]:
+    """
+    从 answer.text 中抽取所有 [引用: ...] 内联引用，返回结构化 citations 列表。
+    每个元素含 display_text、span(start,end)、source_type(kb|web|other)、以及可选的 kb/web 元数据。
+    """
+    if not answer_text:
+        return []
+    citations: List[Dict[str, Any]] = []
+    # 匹配 [引用: ...]，内层不包含 ]，避免跨引用
+    pattern = re.compile(r"\[引用:\s*([^\]]+)\]")
+    for m in pattern.finditer(answer_text):
+        start, end = m.start(), m.end()
+        display_text = m.group(0)
+        inner = (m.group(1) or "").strip()
+        # 联网搜索格式：来源：标题, https://...
+        if "来源：" in inner:
+            source_type = "web"
+            web_meta: Dict[str, Any] = {}
+            rest = inner.replace("来源：", "", 1).strip()
+            # 最后一个形如 https?:// 的片段视为 url，其余为 title
+            url_match = re.search(r"(https?://[^\s,]+(?:\s*[^\s,]*)?)", rest)
+            if url_match:
+                web_meta["url"] = url_match.group(1).strip().rstrip("，, ")
+                web_meta["title"] = rest[: url_match.start()].strip().rstrip("，,").strip() or rest
+            else:
+                web_meta["title"] = rest
+            citation: Dict[str, Any] = {
+                "display_text": display_text,
+                "span": {"start": start, "end": end},
+                "source_type": source_type,
+                "web": web_meta,
+            }
+        else:
+            source_type = "kb"
+            kb_meta: Dict[str, Any] = {}
+            # 文件名：xxx
+            fn = re.search(r"文件名[：:]\s*([^，,]+)", inner)
+            if fn:
+                kb_meta["filename"] = fn.group(1).strip()
+            # 第 N 页
+            page = re.search(r"第\s*(\d+)\s*页", inner)
+            if page:
+                try:
+                    kb_meta["page"] = int(page.group(1))
+                except ValueError:
+                    pass
+            # 资料：/标题：xxx
+            title = re.search(r"(?:资料|标题)[：:]\s*([^，,]+)", inner)
+            if title:
+                kb_meta["title"] = title.group(1).strip()
+            # 剩余片段可作为 section
+            section = inner
+            for prefix in ["文件名", "第", "资料", "标题"]:
+                section = re.sub(rf"{prefix}[^，,]*[，,]?\s*", "", section)
+            if section.strip():
+                kb_meta["section"] = section.strip()
+            citation = {
+                "display_text": display_text,
+                "span": {"start": start, "end": end},
+                "source_type": source_type,
+                "kb": kb_meta,
+            }
+        citations.append(citation)
+    return citations
 
 
 def _map_qa_options(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -263,7 +330,7 @@ async def qa_endpoint(payload: Dict[str, Any]):
             "id": "",
             "model": model or _settings.llm.model,
             "text": answer_text,
-            "citations": [],
+            "citations": _extract_citations(answer_text),
         },
         "usage": None,
         "trace": None,
