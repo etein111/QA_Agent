@@ -5,10 +5,13 @@
     <title>高数学习问答 Agent</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="/static/styles.css" />
-    <!-- MathJax 用于公式渲染 -->
+    <!-- MathJax 用于公式渲染：$...$ 行内，$$...$$ 块级 -->
     <script>
       window.MathJax = {
-        tex: { inlineMath: [["$", "$"], ["\\(", "\\)"]] },
+        tex: {
+          inlineMath: [["$", "$"], ["\\(", "\\)"]],
+          displayMath: [["$$", "$$"], ["\\[", "\\]"]],
+        },
         svg: { fontCache: "global" },
       };
     </script>

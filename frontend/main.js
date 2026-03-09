@@ -34,34 +34,30 @@ function appendMessage(role, content) {
 }
 
 /**
- * 将 Agent 输出做简单处理：
- * - 将 http(s)://... 变成可点击链接
- * - 将 [引用: ... 文件名：xxx.pdf ...] 里的文件名变成 /files/xxx.pdf 的链接
+ * 抽出数学公式（$$ 块级、$ 行内、\[ \] 块级、\( \) 行内），用占位符替换，避免被 Markdown 破坏；最后还原并由 MathJax 渲染。
  */
-function renderContent(text) {
-  let html = escapeHtml(text);
-
-  // 1) 自动识别 URL
-  const urlRegex = /(https?:\/\/[^\s\]]+)/g;
-  html = html.replace(
-    urlRegex,
-    (m) => `<a href="${m}" target="_blank" rel="noreferrer">${m}</a>`,
-  );
-
-  // 2) 处理引用中的 pdf/pptx 文件名
-  const fileRegex = /(文件名：)([^\s，\]]+\.(?:pdf|pptx?))/g;
-  html = html.replace(fileRegex, (_, prefix, filename) => {
-    const href = `/files/${filename}`;
-    return `${prefix}<a href="${href}" target="_blank" rel="noreferrer">${filename}</a>`;
-  });
-
-  // 简单把换行符变成 <br>，段落之间留空行
-  html = html
-    .split("\n\n")
-    .map((para) => `<p>${para.replace(/\n/g, "<br/>")}</p>`)
-    .join("");
-
-  return html;
+function extractMath(text) {
+  const display = [];
+  const inline = [];
+  let s = text
+    // 先匹配 $$ ... $$ 和 \[ ... \]，再匹配 $ ... $ 和 \( ... \)，避免误匹配
+    .replace(/\$\$([\s\S]*?)\$\$/g, (_, formula) => {
+      display.push(formula.trim());
+      return `\u200B__MATH_D_${display.length - 1}__\u200B`;
+    })
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, formula) => {
+      display.push(formula.trim());
+      return `\u200B__MATH_D_${display.length - 1}__\u200B`;
+    })
+    .replace(/\$([^$]*?)\$/g, (_, formula) => {
+      inline.push(formula.trim());
+      return `\u200B__MATH_I_${inline.length - 1}__\u200B`;
+    })
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, formula) => {
+      inline.push(formula.trim());
+      return `\u200B__MATH_I_${inline.length - 1}__\u200B`;
+    });
+  return { text: s, display, inline };
 }
 
 function escapeHtml(str) {
@@ -71,6 +67,109 @@ function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/**
+ * 轻量 Markdown：**加粗**、## 标题、- 无序列表、1. 有序列表、段落空行。
+ * 支持数学公式 $...$ 与 $$...$$，并处理 URL、[引用: ... 文件名：xxx.pdf] 的链接。
+ */
+function renderContent(text) {
+  if (!text || !text.trim()) return "";
+
+  const { text: textWithoutMath, display: displayFormulas, inline: inlineFormulas } = extractMath(text);
+  let html = escapeHtml(textWithoutMath)
+    // **加粗**
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
+  const lines = html.split("\n");
+  const out = [];
+  let inList = false;
+  let listTag = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (inList) {
+        out.push(listTag === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      out.push("");
+      continue;
+    }
+    if (/^##\s+.+/.test(trimmed)) {
+      if (inList) {
+        out.push(listTag === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      out.push("<h2>" + trimmed.replace(/^##\s+/, "") + "</h2>");
+      continue;
+    }
+    if (/^###\s+.+/.test(trimmed)) {
+      if (inList) {
+        out.push(listTag === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      out.push("<h3>" + trimmed.replace(/^###\s+/, "") + "</h3>");
+      continue;
+    }
+    if (/^-\s+/.test(trimmed) || /^\*\s+/.test(trimmed)) {
+      if (!inList || listTag !== "ul") {
+        if (inList) out.push(listTag === "ul" ? "</ul>" : "</ol>");
+        out.push("<ul>");
+        listTag = "ul";
+        inList = true;
+      }
+      out.push("<li>" + trimmed.replace(/^[-*]\s+/, "") + "</li>");
+      continue;
+    }
+    const numBullet = trimmed.match(/^(\d+)\.\s+(.+)/);
+    if (numBullet) {
+      if (!inList || listTag !== "ol") {
+        if (inList) out.push(listTag === "ul" ? "</ul>" : "</ol>");
+        out.push("<ol>");
+        listTag = "ol";
+        inList = true;
+      }
+      out.push("<li>" + numBullet[2] + "</li>");
+      continue;
+    }
+    if (inList) {
+      out.push(listTag === "ul" ? "</ul>" : "</ol>");
+      inList = false;
+    }
+    out.push("<p>" + trimmed + "</p>");
+  }
+  if (inList) out.push(listTag === "ul" ? "</ul>" : "</ol>");
+
+  html = out.join("\n").replace(/\n\n+/g, "\n");
+
+  // 1) 自动识别 URL
+  const urlRegex = /(https?:\/\/[^\s\]<]+)/g;
+  html = html.replace(
+    urlRegex,
+    (m) => `<a href="${m}" target="_blank" rel="noreferrer">${m}</a>`,
+  );
+
+  // 2) 处理引用中的 pdf/pptx 文件名
+  const fileRegex = /(文件名：)([^\s，\]<]+\.(?:pdf|pptx?))/g;
+  html = html.replace(fileRegex, (_, prefix, filename) => {
+    const href = `/files/${encodeURIComponent(filename)}`;
+    return `${prefix}<a href="${href}" target="_blank" rel="noreferrer">${filename}</a>`;
+  });
+
+  // 3) 还原数学公式为 \( \) 与 \[ \]，供 MathJax 识别渲染（公式内 < > 转义以免破坏 HTML）
+  displayFormulas.forEach((formula, i) => {
+    const safe = escapeHtml(formula);
+    html = html.replace(`\u200B__MATH_D_${i}__\u200B`, `<span class="math-display">\\[${safe}\\]</span>`);
+  });
+  inlineFormulas.forEach((formula, i) => {
+    const safe = escapeHtml(formula);
+    html = html.replace(`\u200B__MATH_I_${i}__\u200B`, `<span class="math-inline">\\(${safe}\\)</span>`);
+  });
+
+  return html;
 }
 
 /**

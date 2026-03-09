@@ -92,6 +92,50 @@
   margin: 4px 0;
 }
 
+/* Markdown 排版：标题、列表、加粗 */
+.message-content h2,
+.message-content h3 {
+  margin: 12px 0 6px;
+  font-size: 1em;
+  font-weight: 600;
+  color: #111827;
+}
+.message-content h2 { font-size: 1.05em; }
+.message-content ul,
+.message-content ol {
+  margin: 6px 0;
+  padding-left: 1.5em;
+}
+.message-content li {
+  margin: 2px 0;
+}
+.message-content strong {
+  font-weight: 600;
+  color: #111827;
+}
+.message-content a {
+  color: #2563eb;
+  text-decoration: none;
+}
+.message-content a:hover {
+  text-decoration: underline;
+}
+
+/* 数学公式：块级居中，行内与文字对齐 */
+.message-content .math-display {
+  display: block;
+  margin: 8px 0;
+  text-align: center;
+  overflow-x: auto;
+}
+.message-content .math-inline {
+  display: inline;
+}
+.message-content mjx-container {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
 .input-panel {
   display: flex;
   flex-direction: column;
